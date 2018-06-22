@@ -102,9 +102,6 @@ def _gravitationally_bound(clump, use_thermal_energy=True,
         potential += spe
         #potential += surfacePressureEnergy(clump)
 
-
-
-
     if truncate and potential >= kinetic:
         return True
 
@@ -153,10 +150,9 @@ def surfacePressureEnergy(clump):
 
     pad = 2
 
-    # List of all surface cells. Initialized in wierd way with two 
-    # nan elements just to make the numpy array math work later on. 
-    # These have no physical meaning.
-    allSurfCells = [[np.nan,np.nan,np.nan], [np.nan,np.nan,np.nan]]
+    # dictionary to keep track of surface cells that have been
+    # visited and the corresponding grid they were visited from.
+    allSurfCells = {'cell':[], 'grid':[]}
 
     for grid, clumpMask in clump.data.blocks:
         print(grid)
@@ -183,12 +179,6 @@ def surfacePressureEnergy(clump):
 
         # *** Think about looping over surfInGrid surfOutGrid separately *** #
         for cell in surfCells:
-            
-            # if surface cell has already been visited, it is in 
-            # allSurfaceCells array and can be skipped
-            if not np.abs((np.array(allSurfCells) - cell)).sum(axis=1).all():
-                continue
-            
             surfNormals = []
             cell = np.array(cell)
             center_dds = grid.dds
@@ -205,10 +195,20 @@ def surfacePressureEnergy(clump):
             trueCell = ((new_position - trueGrid.LeftEdge)/trueGrid.dds).v    
             trueCell = tuple(trueCell.astype(int))
 
-            # add trueCell to list of all surface cells to check if this cell
-            # has been previously visited in the loop for another grid
-            allSurfCells.append(trueCell)
-            
+            # if surface cell has already been visited in a different grid loop, 
+            # then we have already accounted for the surface pressure from that cell
+            # and we can skip it.
+            skip = False
+            for g, c in zip(allSurfCells['grid'], allSurfCells['cell']):
+                if (not (np.array(c) - np.array(trueCell)).sum()) and grid.id != g:
+                    skip = True
+                    break
+            if skip:
+                continue
+
+            allSurfCells['cell'].append(trueCell)
+            allSurfCells['grid'].append(grid.id)
+
             #print("\tgrid, trueGrid", grid, trueGrid)
             #print("\tcell, trueCell", cell, trueCell)
 
@@ -317,5 +317,5 @@ def surfacePressureEnergy(clump):
             r_dot_dS = (rs*surfNormals).sum(axis = 1) * dS
             surfPressureTerm += (pressure * r_dot_dS).sum()
             #print(surfPressureTerm.to('erg'))
-    
+
     return surfPressureTerm
